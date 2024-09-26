@@ -1,0 +1,21 @@
+{
+  "name": "nodejs-golang-start",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.mjs",
+  "type": "module",
+  "devDependencies": {
+    "@eslint/js": "^9.11.0",
+    "eslint": "^8.57.1",
+    "eslint-config-standard": "^17.1.0",
+    "eslint-plugin-import": "^2.25.2",
+    "eslint-plugin-n": "^15.0.0 || ^16.0.0 ",
+    "eslint-plugin-promise": "^6.0.0"
+  },
+  "dependencies": {
+    "protobufjs": "^7.4.0"
+  },
+  "keywords": [],
+  "author": "sqlwwx <wwx@wuweixing.com> (http://wiki.lab.wuweixing.com/)",
+  "license": "MIT"
+}

@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+// 包定义
+package messages;
+
+option go_package = "./messages";
+
+// 消息定义
+message ProcessMessage {
+  // 消息类型
+  enum Type {
+    START = 0;
+    STOP = 1;
+    ROCKETMQ_MESSAGE = 2;
+    ROCKETMQ_MESSAGE_ACK = 3;
+    RESULT = 4;
+  }
+
+  // 请求 ID
+  string requestId = 1;
+  // 消息类型
+  Type type = 2;
+  // 信息
+  optional Info info = 3;
+
+  message Info {
+    // 状态码
+    uint32 code = 1;
+    // 消息 ID
+    string messageId = 2;
+    // 消息内容
+    string message = 3;
+  }
+}
