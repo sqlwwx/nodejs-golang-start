@@ -2,11 +2,11 @@
   "name": "nodejs-golang-start",
   "version": "1.0.0",
   "description": "",
-  "main": "index.mjs",
   "type": "module",
   "scripts": {
-    "dev:mock": "node --watch .",
-    "dev:rocket-mq": "node --watch . --message-service-impl rocket-mq"
+    "dev:mock": "node --watch nodejs/index.mjs",
+    "dev:rocket-mq": "node --watch nodejs/index.mjs --message-service-impl rocket-mq",
+    "build": "cd golang && go build"
   },
   "devDependencies": {
     "@eslint/js": "^9.11.0",

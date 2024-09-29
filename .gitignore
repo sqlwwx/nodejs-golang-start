@@ -174,5 +174,4 @@ dist
 # Finder (MacOS) folder config
 .DS_Store
 
-messages/messages.pb.go
-nodejs-golang-start
+golang/app

@@ -22,7 +22,9 @@
 ## 生成 protobuf 代码
 
 ```
-protoc --go_out=. messages.proto
+
+protoc --go_out=./golang proto/messages.proto
+
 ```
 
 ## 使用
