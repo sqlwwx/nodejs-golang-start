@@ -4,6 +4,10 @@
   "description": "",
   "main": "index.mjs",
   "type": "module",
+  "scripts": {
+    "dev:mock": "node --watch .",
+    "dev:rocket-mq": "node --watch . --message-service-impl rocket-mq"
+  },
   "devDependencies": {
     "@eslint/js": "^9.11.0",
     "eslint": "^8.57.1",

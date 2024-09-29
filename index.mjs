@@ -11,7 +11,10 @@ const root = protobuf.loadSync('messages.proto')
 const ProcessMessage = root.lookupType('messages.ProcessMessage')
 
 // 根据环境变量设置命令行参数
-const commandArgs = NODE_ENV === 'production' ? ['./nodejs-golang-start', []] : ['go', ['run', 'main.go']]
+const commandArgs = NODE_ENV === 'production' ? ['./nodejs-golang-start', []] : ['go', ['run', './main.go']]
+// const commandArgs = ['go', ['run', './test/mq.go']]
+
+commandArgs[1].push(...process.argv.slice(2))
 
 // 启动 Go 进程
 const golangProcess = spawn(...commandArgs, {
@@ -27,27 +30,69 @@ let stopPending = false
 
 const log = (...args) => console.log(process.pid, ...args)
 
+let goBuf = Buffer.alloc(0)
+let offset = 0
+
 // 处理 Go 进程输出
-golangProcess.stdout.on('data', (data) => {
-  // 解析 protobuf 消息
-  let offset = 0
-  while (offset < data.length) {
-    const length = data.readUInt32LE(offset)
-    const buffer = data.slice(offset + 4, offset + 4 + length)
-    const message = ProcessMessage.decode(buffer)
-    handleMessage(message)
-    offset += 4 + length
-  }
-})
+golangProcess.stdout.on('data',
+  (data) => {
+    goBuf = Buffer.concat([goBuf, data])
+    // 循环查询符合先后缀的数据
+    while (offset + 9 <= goBuf.length) {
+      if (goBuf[offset] !== 20) {
+        offset++
+        continue
+      }
+      if (goBuf[offset + 1] !== 6) {
+        offset++
+        continue
+      }
+      if (goBuf[offset + 6] !== 21) {
+        offset++
+        continue
+      }
+      if (goBuf[offset + 7] !== 6) {
+        offset++
+        continue
+      }
+
+      const length = goBuf.subarray(offset + 2, offset + 6).readUInt32LE(0)
+
+      if (offset + 8 + length > goBuf.length) {
+        // 数据还未完全到达，等待更多数据
+        break
+      }
+
+      try {
+        const message = ProcessMessage.decode(
+          goBuf.subarray(offset + 8, offset + 8 + length)
+        )
+        goBuf = goBuf.subarray(offset + 8 + length)
+        offset = 0
+        handleMessage(message)
+        continue
+      } catch (error) {
+        console.error(error)
+        offset += 2 // 跳过当前解析失败的部分
+      }
+    }
+
+    // 如果 offset 达到一定大小，或者解析完成后，重置 goBuf 和 offset
+    if (offset >= 1024 || offset >= goBuf.length) {
+      goBuf = goBuf.subarray(offset)
+      offset = 0
+    }
+  })
 
 // 处理 Go 进程错误输出
 golangProcess.stderr.on('data', (data) => {
-  console.error('go', golangProcess.pid, data.toString())
+  data.toString().split('\n').filter(s => s)
+    .map(s => console.log(golangProcess.pid, s))
 })
 
 // 处理 Go 进程退出
 golangProcess.on('exit', (code) => {
-  console.log(`Go 进程退出，退出码：${code}`)
+  log(`Go 进程退出，退出码：${code}`)
 })
 
 // 处理 Go 进程错误
@@ -58,7 +103,7 @@ golangProcess.on('error', (err) => {
 let pending = 0
 
 async function handleMessage (message) {
-  console.log(process.pid, 'handleMessage', JSON.stringify(message))
+  log('handleMessage', message.info)
   if (message.type === ProcessMessage.Type.ROCKETMQ_MESSAGE) {
     log('Received RocketMQ message', pending += 1, message.info.messageId)
     setTimeout(() => {
@@ -139,8 +184,10 @@ async function stopSubscription () {
   log('Stop subscription result:', result)
 }
 
-// 启动订阅
-startSubscription()
+setTimeout(() => {
+  // 启动订阅
+  startSubscription()
+}, 3000)
 
 /**
  * 等待所有消息处理完成
@@ -151,7 +198,7 @@ const waitDone = async () => {
     const timer = setInterval(() => {
       if (pending === 0) {
         clearInterval(timer)
-        console.log('doneMessages')
+        log('doneMessages')
         resolve()
       }
     }, 500)
@@ -159,7 +206,7 @@ const waitDone = async () => {
 }
 
 const handleExit = async (signal) => {
-  console.log('on', signal)
+  log('on', signal)
   if (stopPending) {
     return
   }

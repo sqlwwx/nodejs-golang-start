@@ -3,80 +3,41 @@ package main
 import (
 	"bufio"
 	"encoding/binary"
+	"flag"
 	"io"
 	"log"
 	"os"
-	"sync"
-	"time"
 
-	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 
-	pb "nodejs-golang-start/messages"
+	pb "app/messages"
+	service "app/service"
 )
 
 // 全局变量
 var (
-	subscriptionActive = false
-	messageQueue       = make(chan *RocketMQMessage, 100)
-	wg                 sync.WaitGroup
-	wgAck              sync.WaitGroup
-	waitDoneMessages   = make(map[string]time.Time)
+	// mock,rocket-mq
+	MESSAGE_SERVICE_IMPL = flag.String("message-service-impl", "mock", "消息服务实现方式")
+	messageService       service.MessageService
 )
 
-// 常量定义
-const (
-	// WAIT_DONE_MSG_TIME       = 20 * time.Minute
-	// CLEAN_WAIT_DONE_MSG_TIME = 10 * time.Minute
-	WAIT_DONE_MSG_TIME       = 10 * time.Minute
-	CLEAN_WAIT_DONE_MSG_TIME = 5 * time.Minute
-)
+func initMessageService() {
+	flag.Parse()
+	messageService, _ = service.GetImplementation(*MESSAGE_SERVICE_IMPL)
 
-// RocketMQ 消息结构体
-type RocketMQMessage struct {
-	Message   string `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
-	MessageId string `protobuf:"bytes,2,opt,name=messageId,proto3" json:"messageId,omitempty"`
-}
-
-func cleanWaitDoneMessages() {
-	log.Println("Cleaning wait done messages", waitDoneMessages)
-	now := time.Now()
-	for id, timestamp := range waitDoneMessages {
-		if now.Sub(timestamp) > WAIT_DONE_MSG_TIME {
-			delete(waitDoneMessages, id)
-		}
+	if messageService == nil {
+		log.Println("No implementation found ", *MESSAGE_SERVICE_IMPL)
+		return
 	}
+	messageService.Init()
 }
 
 func main() {
-	// 设置日志输出
 	log.SetOutput(os.Stderr)
-
-	log.Println("Starting go server")
+	initMessageService()
+	log.Println("Starting go server", *MESSAGE_SERVICE_IMPL)
 
 	reader := bufio.NewReader(os.Stdin)
-
-	// 启动定时器, 清理超时消息
-	ticker := time.NewTicker(CLEAN_WAIT_DONE_MSG_TIME)
-	go func() {
-		for range ticker.C {
-			cleanWaitDoneMessages()
-		}
-	}()
-
-	// 启动消息队列
-	go func() {
-		for {
-			time.Sleep(2 * time.Second)
-			if subscriptionActive {
-				messageId := uuid.New().String()
-				messageQueue <- &RocketMQMessage{
-					Message:   "Simulated RocketMQ Message",
-					MessageId: messageId,
-				}
-			}
-		}
-	}()
 
 	// 处理消息
 	for {
@@ -114,10 +75,11 @@ func main() {
 func handleMessage(msg *pb.ProcessMessage) {
 	switch msg.Type {
 	case pb.ProcessMessage_START:
-		log.Println("START")
+		log.Println("exec startSubscription")
 		result := startSubscription()
 		sendResult(msg.RequestId, result)
 	case pb.ProcessMessage_STOP:
+		log.Println("exec stopSubscription")
 		result := stopSubscription()
 		sendResult(msg.RequestId, result)
 	case pb.ProcessMessage_ROCKETMQ_MESSAGE_ACK:
@@ -126,44 +88,19 @@ func handleMessage(msg *pb.ProcessMessage) {
 }
 
 func startSubscription() *pb.ProcessMessage_Info {
-	if !subscriptionActive {
-		subscriptionActive = true
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for msg := range messageQueue {
-				rocketMQMessage := &pb.ProcessMessage{
-					RequestId: uuid.New().String(),
-					Type:      pb.ProcessMessage_ROCKETMQ_MESSAGE,
-					Info: &pb.ProcessMessage_Info{
-						MessageId: msg.MessageId,
-						Message:   msg.Message,
-					},
-				}
-				wgAck.Add(1)
-				sendMessage(rocketMQMessage)
-				waitDoneMessages[msg.MessageId] = time.Now()
-			}
-		}()
-		return &pb.ProcessMessage_Info{Code: 0, Message: "Subscription started"}
-	}
-	return &pb.ProcessMessage_Info{Code: 1, Message: "Subscription already active"}
+	return messageService.Subscribe(func(msg *pb.ProcessMessage) {
+		sendMessage(msg)
+	})
 }
 
 func stopSubscription() *pb.ProcessMessage_Info {
-	if subscriptionActive {
-		subscriptionActive = false
-		close(messageQueue)
-		wg.Wait()
-		return &pb.ProcessMessage_Info{Code: 0, Message: "Subscription stopped "}
-	}
-	return &pb.ProcessMessage_Info{Code: 1, Message: "Subscription not active"}
+	return messageService.Unsubscribe()
 }
 
 func handleAck(info *pb.ProcessMessage_Info) {
-	delete(waitDoneMessages, info.MessageId)
+	messageService.AckMsg(info)
 	if info.GetCode() == 0 {
-		log.Println("Message", info.MessageId, "acked successfully", len(waitDoneMessages))
+		log.Println("Message", info.MessageId, "acked successfully", messageService.GetPendingMessageCount())
 	} else {
 		log.Println("Message", info.MessageId, "failed to ack")
 	}
@@ -171,8 +108,11 @@ func handleAck(info *pb.ProcessMessage_Info) {
 
 func sendMessage(msg *pb.ProcessMessage) {
 	data, _ := proto.Marshal(msg)
-	length := uint32(len(data))
-	binary.Write(os.Stdout, binary.LittleEndian, length)
+
+	header := []byte{0x14, 0x06, 0, 0, 0, 0, 0x15, 0x06}
+	binary.LittleEndian.PutUint32(header[2:6], uint32(len(data)))
+
+	os.Stdout.Write(header)
 	os.Stdout.Write(data)
 }
 
