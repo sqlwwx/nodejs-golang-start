@@ -16,8 +16,8 @@
 ## 安装
 
 1. 安装依赖：`pnpm i`
-2. 构建 go 程序：`go run main.go`
-3. 运行 Node.js 程序：`node index.mjs`
+2. 构建 go 程序：`pnpm build`
+3. 运行 Node.js 程序：`pnpm start`
 
 ## 生成 protobuf 代码
 

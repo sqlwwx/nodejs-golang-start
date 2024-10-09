@@ -11,9 +11,9 @@ import (
 
 // 全局变量
 var (
-	// mock,rocket-mq
+	// 消息服务类型，可选值：mock, rocket-mq
 	MESSAGE_SERVICE_TYPE string
-	// stdout, ipc
+	// 处理消息类型，可选值：stdout, ipc
 	PROCESS_MESSAGE_TYPE  string
 	messageService        messageServicePkg.MessageService
 	processMessageService processMessage.ProcessMessageService
@@ -47,17 +47,17 @@ func main() {
 func handleProcessMessage(msg *pb.ProcessMessage) {
 	switch msg.Type {
 	case pb.ProcessMessage_START:
-		log.Println("exec startSubscription")
+		log.Println("执行启动订阅")
 		result := startSubscription()
 		sendResult(msg.RequestId, result)
 	case pb.ProcessMessage_STOP:
-		log.Println("exec stopSubscription")
+		log.Println("执行取消订阅")
 		result := stopSubscription()
 		sendResult(msg.RequestId, result)
 	case pb.ProcessMessage_ROCKETMQ_MESSAGE_ACK:
 		handleAck(msg.Info)
 	default:
-		log.Printf("unknown message type: %v", msg.Type)
+		log.Printf("未知的消息类型: %v", msg.Type)
 	}
 }
 
@@ -77,9 +77,9 @@ func stopSubscription() *pb.ProcessMessage_Info {
 func handleAck(info *pb.ProcessMessage_Info) {
 	messageService.AckMsg(info)
 	if info.GetCode() == 0 {
-		log.Println("Message", info.MessageId, "acked successfully", messageService.GetPendingMessageCount())
+		log.Println("消息", info.MessageId, "确认成功", messageService.GetPendingMessageCount())
 	} else {
-		log.Println("Message", info.MessageId, "failed to ack")
+		log.Println("消息", info.MessageId, "确认失败")
 	}
 }
 

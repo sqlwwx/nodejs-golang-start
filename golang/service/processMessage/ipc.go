@@ -15,56 +15,59 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// IpcProcessMessageService 结构体实现了 ProcessMessageService 接口，并包含一个 net.Conn 连接
 type IpcProcessMessageService struct {
-	ProcessMessageService,
+	ProcessMessageService
 	conn net.Conn
 }
 
+// dialFillZero 函数用于填充地址字节数组，确保地址长度为108字节
 func dialFillZero(network, name string) (net.Conn, error) {
 	raw := []byte(name)
-	addr_b := make([]byte, 108)
-	for i, c := range raw {
-		addr_b[i] = c
-	}
-	addr := string(addr_b)
-	return net.Dial(network, addr)
+	addr := make([]byte, 108)
+	copy(addr, raw)
+	return net.Dial(network, string(addr))
 }
 
+// getConnection 方法用于获取或创建与 IPC 的连接
 func (s *IpcProcessMessageService) getConnection() net.Conn {
 	if s.conn == nil {
 		socketPath := os.Getenv("SOCKET_PATH")
+		var err error
 
 		if strings.HasPrefix(socketPath, "@") {
-			conn, err := dialFillZero("unix", socketPath)
-			if err != nil {
-				log.Fatal(err)
-			} else {
-				s.conn = conn
-			}
-
+			s.conn, err = dialFillZero("unix", socketPath)
 		} else {
 			addr, _ := net.ResolveUnixAddr("unix", socketPath)
-			conn, err := net.Dial("unix", addr.String())
-			if err != nil {
-				log.Fatal(err)
-			} else {
-				s.conn = conn
-			}
+			s.conn, err = net.Dial("unix", addr.String())
+		}
+
+		if err != nil {
+			log.Fatal(err)
 		}
 	}
 	return s.conn
 }
 
+// SendMessage 方法用于发送消息到 IPC
 func (s *IpcProcessMessageService) SendMessage(msg *pb.ProcessMessage) {
-	data, _ := proto.Marshal(msg)
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		log.Println("Error marshalling message:", err)
+		return
+	}
 	header := []byte{0x14, 0x06, 0, 0, 0, 0, 0x15, 0x06}
 	binary.LittleEndian.PutUint32(header[2:6], uint32(len(data)))
 	s.getConnection()
 	buf := bytes.NewBuffer(header)
 	buf.Write(data)
-	s.conn.Write(buf.Bytes())
+	_, err = s.conn.Write(buf.Bytes())
+	if err != nil {
+		log.Println("Error writing message:", err)
+	}
 }
 
+// Start 方法用于启动消息处理循环
 func (s *IpcProcessMessageService) Start(onMsg func(*pb.ProcessMessage)) {
 	s.getConnection()
 	reader := bufio.NewReader(s.conn)
@@ -80,9 +83,7 @@ func (s *IpcProcessMessageService) Start(onMsg func(*pb.ProcessMessage)) {
 
 		// 读取消息
 		buffer := make([]byte, length)
-
 		_, err = io.ReadFull(reader, buffer)
-
 		if err != nil {
 			log.Println("Error reading message:", err)
 			continue

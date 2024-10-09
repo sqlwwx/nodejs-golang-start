@@ -6,34 +6,66 @@ import { initProcessMessageService } from './service/process-message/index.mjs'
 import { log, ProcessMessage } from './utils/index.mjs'
 import * as golangProcessUtil from './utils/golang-process.mjs'
 
-// 启动 Go 进程
+/**
+ * 启动 Go 进程
+ * @returns {Promise<Object>} Go 进程实例
+ */
 const golangProcess = await golangProcessUtil.start()
 
-// 创建请求映射
+/**
+ * 创建请求映射
+ * @type {Map<string, Function>}
+ */
 const requestMap = new Map()
 
-// 订阅状态
+/**
+ * 订阅状态
+ * @type {boolean}
+ */
 let subscriptionActive = false
+
+/**
+ * 停止状态
+ * @type {boolean}
+ */
 let stopPending = false
 
+/**
+ * 初始化消息处理服务
+ * @param {Object} golangProcess Go 进程实例
+ * @returns {Promise<Object>} 消息处理服务实例
+ */
 const processMessageService = await initProcessMessageService(golangProcess)
 
+/**
+ * 启动消息处理服务
+ * @param {Function} callback 消息处理回调函数
+ */
 processMessageService.start((msg) => {
   handleMessage(msg)
 })
 
+/**
+ * 待处理消息数量
+ * @type {number}
+ */
 let pending = 0
 
+/**
+ * 处理消息
+ * @param {Object} message 消息对象
+ * @returns {Promise<void>}
+ */
 async function handleMessage (message) {
   log('处理消息', message.info)
   let requestId
   let resolve
   switch (message.type) {
     case ProcessMessage.Type.ROCKETMQ_MESSAGE:
-    // 处理RocketMQ消息
+      // 处理RocketMQ消息
       log('Received RocketMQ message', pending += 1, message.info.messageId)
       setTimeout(() => {
-      // 发送ACK消息
+        // 发送ACK消息
         pending -= 1
         return processMessageService.sendMessage({
           type: ProcessMessage.Type.ROCKETMQ_MESSAGE_ACK,
@@ -44,7 +76,7 @@ async function handleMessage (message) {
       }, Math.floor(Math.random() * 30_000))
       break
     case ProcessMessage.Type.RESULT:
-    // 处理结果消息
+      // 处理结果消息
       requestId = message.requestId
       resolve = requestMap.get(requestId)
       if (resolve) {
@@ -127,6 +159,11 @@ const waitDone = async () => {
   })
 }
 
+/**
+ * 处理退出信号
+ * @param {string} signal 信号名称
+ * @returns {Promise<void>}
+ */
 const handleExit = async (signal) => {
   log('on', signal)
   if (stopPending) {

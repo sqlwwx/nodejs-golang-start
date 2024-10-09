@@ -1,6 +1,9 @@
 import { log } from '../../utils/log.mjs'
 import { ProcessMessage } from '../../utils/proto.mjs'
 
+// 这是一个处理消息的基础服务类，用于处理来自 Go 进程的消息。
+// 它通过 `start` 方法启动消息处理，并通过 `onData` 方法处理接收到的数据。
+// 该类使用 `Buffer` 来处理二进制数据，并使用 `ProcessMessage` 来解码消息。
 export class BaseProcessMessageService {
   #onMsg
   #buf = Buffer.alloc(0)

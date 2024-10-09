@@ -7,7 +7,7 @@ export const start = async () => {
   // 根据环境变量设置命令行参数
   const commandArgs = NODE_ENV === 'production' ? ['./app', []] : ['go', ['run', 'main.go']]
 
-  log('start golang-process', commandArgs)
+  log('启动 Go 进程', commandArgs)
 
   // 启动 Go 进程
   const golangProcess = spawn(...commandArgs, {
@@ -22,7 +22,7 @@ export const start = async () => {
   // 处理 Go 进程错误输出
   golangProcess.stderr.on('data', (data) => {
     data.toString().split('\n').filter(s => s)
-      .map(s => console.log(golangProcess.pid, s))
+      .forEach(s => console.log(golangProcess.pid, s))
   })
 
   // 处理 Go 进程退出
@@ -34,5 +34,6 @@ export const start = async () => {
   golangProcess.on('error', (err) => {
     console.error(`Go 进程错误：${err}`)
   })
+
   return golangProcess
 }

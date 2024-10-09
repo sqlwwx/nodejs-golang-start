@@ -26,7 +26,7 @@ func (m *MockMessageService) Init() {
 	go func() {
 		for {
 			time.Sleep(2 * time.Second)
-			if m.subscriptionActive && m.count < 3 {
+			if m.subscriptionActive && m.count < 10 {
 				m.count += 1
 				messageId := uuid.New().String()
 				m.messageQueue <- &RocketMQMessage{

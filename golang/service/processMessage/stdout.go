@@ -19,14 +19,21 @@ type StdoutProcessMessageService struct {
 }
 
 func (s *StdoutProcessMessageService) SendMessage(msg *pb.ProcessMessage) {
-	data, _ := proto.Marshal(msg)
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		log.Println("Error marshalling message:", err)
+		return
+	}
 
 	header := []byte{0x14, 0x06, 0, 0, 0, 0, 0x15, 0x06}
 	binary.LittleEndian.PutUint32(header[2:6], uint32(len(data)))
 
 	buf := bytes.NewBuffer(header)
 	buf.Write(data)
-	os.Stdout.Write(buf.Bytes())
+	_, err = os.Stdout.Write(buf.Bytes())
+	if err != nil {
+		log.Println("Error writing message to stdout:", err)
+	}
 }
 
 // 实现进程消息服务接口
@@ -44,9 +51,7 @@ func (s *StdoutProcessMessageService) Start(onMsg func(*pb.ProcessMessage)) {
 
 		// 读取消息
 		buffer := make([]byte, length)
-
 		_, err = io.ReadFull(reader, buffer)
-
 		if err != nil {
 			log.Println("Error reading message:", err)
 			continue

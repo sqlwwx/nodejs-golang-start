@@ -7,13 +7,13 @@ option go_package = "./messages";
 
 // 消息定义
 message ProcessMessage {
-  // 消息类型
+  // 消息类型枚举
   enum Type {
-    START = 0;
-    STOP = 1;
-    ROCKETMQ_MESSAGE = 2;
-    ROCKETMQ_MESSAGE_ACK = 3;
-    RESULT = 4;
+    START = 0; // 启动消息
+    STOP = 1; // 停止消息
+    ROCKETMQ_MESSAGE = 2; // RocketMQ 消息
+    ROCKETMQ_MESSAGE_ACK = 3; // RocketMQ 消息确认
+    RESULT = 4; // 结果消息
   }
 
   // 请求 ID
