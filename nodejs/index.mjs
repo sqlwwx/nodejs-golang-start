@@ -1,26 +1,13 @@
-import { spawn } from 'child_process'
+import 'dotenv/config'
 import { randomUUID } from 'crypto'
-import { Buffer } from 'buffer'
 import process from 'node:process'
-import protobuf from 'protobufjs'
 
-const { NODE_ENV } = process.env
-
-// 加载 protobuf 文件
-const root = protobuf.loadSync('proto/messages.proto')
-const ProcessMessage = root.lookupType('messages.ProcessMessage')
-
-// 根据环境变量设置命令行参数
-const commandArgs = NODE_ENV === 'production' ? ['./app', []] : ['go', ['run', 'main.go']]
-// const commandArgs = ['go', ['run', './test/mq.go']]
-
-commandArgs[1].push(...process.argv.slice(2))
+import { initProcessMessageService } from './service/process-message/index.mjs'
+import { log, ProcessMessage } from './utils/index.mjs'
+import * as golangProcessUtil from './utils/golang-process.mjs'
 
 // 启动 Go 进程
-const golangProcess = spawn(...commandArgs, {
-  detached: true,
-  cwd: 'golang'
-})
+const golangProcess = await golangProcessUtil.start()
 
 // 创建请求映射
 const requestMap = new Map()
@@ -29,134 +16,45 @@ const requestMap = new Map()
 let subscriptionActive = false
 let stopPending = false
 
-const log = (...args) => console.log(process.pid, ...args)
+const processMessageService = await initProcessMessageService(golangProcess)
 
-let goBuf = Buffer.alloc(0)
-let offset = 0
-
-class StdioProcessMessageAdapter {
-  #golangProcess
-  constructor (golangProcess) {
-    this.#golangProcess = golangProcess
-  }
-
-  send (message) {
-    const buffer = ProcessMessage.encode(message).finish()
-    log('Sending message:', buffer.length, JSON.stringify(message))
-    const lengthBuffer = Buffer.alloc(4)
-    lengthBuffer.writeUInt32LE(buffer.length, 0)
-    golangProcess.stdin.write(lengthBuffer)
-    golangProcess.stdin.write(buffer)
-  }
-
-  start (onMsg) {
-    // 处理 Go 进程输出
-    this.#golangProcess.stdout.on('data', (data) => {
-      goBuf = Buffer.concat([goBuf, data])
-      // 循环查询符合先后缀的数据
-      while (offset + 9 <= goBuf.length) {
-        if (goBuf[offset] !== 20) {
-          offset++
-          continue
-        }
-        if (goBuf[offset + 1] !== 6) {
-          offset++
-          continue
-        }
-        if (goBuf[offset + 6] !== 21) {
-          offset++
-          continue
-        }
-        if (goBuf[offset + 7] !== 6) {
-          offset++
-          continue
-        }
-
-        const length = goBuf.subarray(offset + 2, offset + 6).readUInt32LE(0)
-
-        if (offset + 8 + length > goBuf.length) {
-          // 数据还未完全到达，等待更多数据
-          break
-        }
-
-        try {
-          const message = ProcessMessage.decode(
-            goBuf.subarray(offset + 8, offset + 8 + length)
-          )
-          goBuf = goBuf.subarray(offset + 8 + length)
-          offset = 0
-          onMsg(message)
-          continue
-        } catch (error) {
-          console.error(error)
-          offset += 2 // 跳过当前解析失败的部分
-        }
-      }
-
-      // 如果 offset 达到一定大小，或者解析完成后，重置 goBuf 和 offset
-      if (offset >= 1024 || offset >= goBuf.length) {
-        goBuf = goBuf.subarray(offset)
-        offset = 0
-      }
-    })
-  }
-}
-
-const processMessageAdapter = new StdioProcessMessageAdapter(golangProcess)
-
-processMessageAdapter.start((msg) => {
+processMessageService.start((msg) => {
   handleMessage(msg)
-})
-
-// 处理 Go 进程错误输出
-golangProcess.stderr.on('data', (data) => {
-  data.toString().split('\n').filter(s => s)
-    .map(s => console.log(golangProcess.pid, s))
-})
-
-// 处理 Go 进程退出
-golangProcess.on('exit', (code) => {
-  log(`Go 进程退出，退出码：${code}`)
-})
-
-// 处理 Go 进程错误
-golangProcess.on('error', (err) => {
-  console.error(`Go 进程错误：${err}`)
 })
 
 let pending = 0
 
 async function handleMessage (message) {
   log('处理消息', message.info)
-  if (message.type === ProcessMessage.Type.ROCKETMQ_MESSAGE) {
-    log('Received RocketMQ message', pending += 1, message.info.messageId)
-    setTimeout(() => {
-      pending -= 1
-      return processMessageAdapter.send({
-        type: ProcessMessage.Type.ROCKETMQ_MESSAGE_ACK,
-        info: {
-          messageId: message.info.messageId
-        }
-      })
-    }, Math.floor(Math.random() * 3 * 60_000))
+  let requestId
+  let resolve
+  switch (message.type) {
+    case ProcessMessage.Type.ROCKETMQ_MESSAGE:
+    // 处理RocketMQ消息
+      log('Received RocketMQ message', pending += 1, message.info.messageId)
+      setTimeout(() => {
+      // 发送ACK消息
+        pending -= 1
+        return processMessageService.sendMessage({
+          type: ProcessMessage.Type.ROCKETMQ_MESSAGE_ACK,
+          info: {
+            messageId: message.info.messageId
+          }
+        })
+      }, Math.floor(Math.random() * 30_000))
+      break
+    case ProcessMessage.Type.RESULT:
+    // 处理结果消息
+      requestId = message.requestId
+      resolve = requestMap.get(requestId)
+      if (resolve) {
+        resolve(message.info)
+        requestMap.delete(requestId)
+      }
+      break
+    default:
+      log('未知消息类型', message)
   }
-  if (message.type === ProcessMessage.Type.RESULT) {
-    const requestId = message.requestId
-    const resolve = requestMap.get(requestId)
-    if (resolve) {
-      resolve(message.info)
-      requestMap.delete(requestId)
-    }
-  }
-}
-
-function sendMessage (message) {
-  const buffer = ProcessMessage.encode(message).finish()
-  log('Sending message:', buffer.length, JSON.stringify(message))
-  const lengthBuffer = Buffer.alloc(4)
-  lengthBuffer.writeUInt32LE(buffer.length, 0)
-  golangProcess.stdin.write(lengthBuffer)
-  golangProcess.stdin.write(buffer)
 }
 
 /**
@@ -172,7 +70,7 @@ async function sendCommand (command) {
     // 将请求 ID 和解析函数存储在 Map 中
     requestMap.set(requestId, resolve)
     // 发送命令给 Go 进程
-    sendMessage(command)
+    processMessageService.sendMessage(command)
   })
 }
 
@@ -248,6 +146,7 @@ const handleExit = async (signal) => {
     golangProcess.kill('SIGINT')
     clearTimeout(timer)
     console.log(golangProcess.killed)
+    processMessageService.close()
     process.exit(0)
   }
 }

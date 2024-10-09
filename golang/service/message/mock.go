@@ -1,6 +1,7 @@
-package service
+package message
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -9,23 +10,27 @@ import (
 	pb "app/messages"
 )
 
-type MockMessageServiceImpl struct {
+// 模拟消息服务实现
+type MockMessageService struct {
 	WaitDoneAble
 	subscriptionActive bool
 	messageQueue       chan *RocketMQMessage
 	wg                 sync.WaitGroup
 	wgAck              sync.WaitGroup
+	count              int
 }
 
-func (m *MockMessageServiceImpl) Init() {
+func (m *MockMessageService) Init() {
 	m.startCleanTimeoutMessages()
+	m.count = 0
 	go func() {
 		for {
 			time.Sleep(2 * time.Second)
-			if m.subscriptionActive {
+			if m.subscriptionActive && m.count < 3 {
+				m.count += 1
 				messageId := uuid.New().String()
 				m.messageQueue <- &RocketMQMessage{
-					Message:   "Simulated RocketMQ Message",
+					Message:   fmt.Sprintf("message %d", m.count),
 					MessageId: messageId,
 				}
 			}
@@ -33,7 +38,7 @@ func (m *MockMessageServiceImpl) Init() {
 	}()
 }
 
-func (m *MockMessageServiceImpl) Subscribe(callback MessageCallback) *pb.ProcessMessage_Info {
+func (m *MockMessageService) Subscribe(callback MessageCallback) *pb.ProcessMessage_Info {
 	if !m.subscriptionActive {
 		m.subscriptionActive = true
 		m.wg.Add(1)
@@ -58,7 +63,7 @@ func (m *MockMessageServiceImpl) Subscribe(callback MessageCallback) *pb.Process
 	return &pb.ProcessMessage_Info{Code: 1, Message: "Subscription already active"}
 }
 
-func (m *MockMessageServiceImpl) Unsubscribe() *pb.ProcessMessage_Info {
+func (m *MockMessageService) Unsubscribe() *pb.ProcessMessage_Info {
 	if m.subscriptionActive {
 		m.subscriptionActive = false
 		close(m.messageQueue)
@@ -67,6 +72,6 @@ func (m *MockMessageServiceImpl) Unsubscribe() *pb.ProcessMessage_Info {
 	return &pb.ProcessMessage_Info{Code: 0, Message: "Subscription stopped"}
 }
 
-func (m *MockMessageServiceImpl) AckMsg(info *pb.ProcessMessage_Info) {
+func (m *MockMessageService) AckMsg(info *pb.ProcessMessage_Info) {
 	m.DoneMessage(info.MessageId)
 }

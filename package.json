@@ -4,8 +4,10 @@
   "description": "",
   "type": "module",
   "scripts": {
-    "dev:mock": "node --watch nodejs/index.mjs",
-    "dev:rocket-mq": "node --watch nodejs/index.mjs --message-service-impl rocket-mq",
+    "start": "NODE_ENV=production node nodejs/index.mjs",
+    "dev": "node --watch nodejs/index.mjs",
+    "dev:mock": "MESSAGE_SERVICE=mock node --watch nodejs/index.mjs",
+    "dev:rocket-mq": "MESSAGE_SERVICE=rocket-mq node --watch nodejs/index.mjs",
     "build": "cd golang && go build"
   },
   "devDependencies": {
@@ -17,6 +19,7 @@
     "eslint-plugin-promise": "^6.0.0"
   },
   "dependencies": {
+    "dotenv": "^16.4.5",
     "protobufjs": "^7.4.0"
   },
   "keywords": [],

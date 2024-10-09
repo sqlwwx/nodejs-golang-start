@@ -1,4 +1,4 @@
-package service
+package message
 
 import (
 	"context"
@@ -14,13 +14,10 @@ import (
 	"github.com/google/uuid"
 )
 
-const (
-	Topic         = "NORMAL"
-	ConsumerGroup = "LOCAL_DEV"
-	Endpoint      = "ep-bp1ie0935b53ed066d22.epsrv-bp1g2k84c7kid2igyiun.cn-hangzhou.privatelink.aliyuncs.com:8080"
-)
-
 var (
+	Topic                   = os.Getenv("ROCKETMQ_TOPIC")
+	ConsumerGroup           = os.Getenv("ROCKETMQ_CONSUMER_GROUP")
+	Endpoint                = os.Getenv("ROCKETMQ_ENDPOINT")
 	AccessKey               = os.Getenv("ROCKETMQ_ACCESS_KEY")
 	SecretKey               = os.Getenv("ROCKETMQ_SECRET_KEY")
 	awaitDuration           = time.Second * 100
@@ -28,14 +25,14 @@ var (
 	invisibleDuration       = time.Second * 400
 )
 
-type RocketMQMessageServiceImpl struct {
+type RocketMQMessageService struct {
 	WaitDoneAble
 	subscriptionActive bool
 	consumer           rmq_client.SimpleConsumer
 	pendingMsgMap      map[string]*rmq_client.MessageView
 }
 
-func (m *RocketMQMessageServiceImpl) Init() {
+func (m *RocketMQMessageService) Init() {
 	log.SetOutput(os.Stderr)
 	// os.Setenv("mq.consoleAppender.enabled", "true")
 	// rmq_client.ResetLogger()
@@ -64,7 +61,7 @@ func (m *RocketMQMessageServiceImpl) Init() {
 	m.startCleanTimeoutMessages()
 }
 
-func (m *RocketMQMessageServiceImpl) Subscribe(callback MessageCallback) *pb.ProcessMessage_Info {
+func (m *RocketMQMessageService) Subscribe(callback MessageCallback) *pb.ProcessMessage_Info {
 	if m.subscriptionActive {
 		return &pb.ProcessMessage_Info{Code: 1, Message: "Subscription already active"}
 	}
@@ -97,7 +94,7 @@ func (m *RocketMQMessageServiceImpl) Subscribe(callback MessageCallback) *pb.Pro
 	return &pb.ProcessMessage_Info{Code: 0, Message: "Subscription started"}
 }
 
-func (m *RocketMQMessageServiceImpl) Unsubscribe() *pb.ProcessMessage_Info {
+func (m *RocketMQMessageService) Unsubscribe() *pb.ProcessMessage_Info {
 	if m.subscriptionActive {
 		m.subscriptionActive = false
 		log.Println("start consumer gracefulStop")
@@ -107,7 +104,7 @@ func (m *RocketMQMessageServiceImpl) Unsubscribe() *pb.ProcessMessage_Info {
 	return &pb.ProcessMessage_Info{Code: 0, Message: "Subscription stopped"}
 }
 
-func (m *RocketMQMessageServiceImpl) AckMsg(info *pb.ProcessMessage_Info) {
+func (m *RocketMQMessageService) AckMsg(info *pb.ProcessMessage_Info) {
 	log.Println("ack", info)
 	m.consumer.Ack(context.TODO(), m.pendingMsgMap[info.MessageId])
 	m.DoneMessage(info.MessageId)

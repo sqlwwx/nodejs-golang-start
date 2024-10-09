@@ -1,4 +1,4 @@
-package service
+package message
 
 import (
 	"sync"
@@ -26,27 +26,20 @@ type MessageService interface {
 
 type MessageCallback func(msg *pb.ProcessMessage)
 
-// 注册表
-var implementations = make(map[string]MessageService)
-
-// 注册函数
-func Register(name string, impl MessageService) {
-	implementations[name] = impl
-}
-
 // 获取实现
-func GetImplementation(name string) (MessageService, bool) {
-	impl, exists := implementations[name]
-	return impl, exists
-}
-func init() {
-	Register("mock", &MockMessageServiceImpl{
+func Get(name string) MessageService {
+	switch name {
+	case "rocket-mq":
+		return &RocketMQMessageService{
+			subscriptionActive: false,
+		}
+	case "mock":
+	default:
+	}
+	return &MockMessageService{
 		subscriptionActive: false,
 		messageQueue:       make(chan *RocketMQMessage, 100),
 		wg:                 sync.WaitGroup{},
 		wgAck:              sync.WaitGroup{},
-	})
-	Register("rocket-mq", &RocketMQMessageServiceImpl{
-		subscriptionActive: false,
-	})
+	}
 }
